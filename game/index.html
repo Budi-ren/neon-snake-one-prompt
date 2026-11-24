@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Neon Snake — built from one prompt</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: #050510;
+    color: #e8fff0;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  h1 {
+    font-size: clamp(28px, 6vw, 44px);
+    letter-spacing: 0.35em;
+    font-weight: 800;
+    color: #39ff6a;
+    text-shadow: 0 0 18px #39ff6a, 0 0 42px rgba(57,255,106,.55);
+    margin-bottom: 4px;
+  }
+  .sub {
+    font-size: clamp(12px, 2.4vw, 15px);
+    letter-spacing: 0.2em;
+    color: #8fa8ff;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+  .hud {
+    display: flex;
+    gap: 28px;
+    margin-bottom: 12px;
+    font-weight: 700;
+    font-size: clamp(16px, 3.4vw, 22px);
+  }
+  .hud span b { color: #39ff6a; }
+  .hud span.pink b { color: #ff2d78; }
+  #wrap { position: relative; }
+  canvas {
+    display: block;
+    width: min(92vw, 900px);
+    height: auto;
+    aspect-ratio: 1 / 1;
+    background: #070718;
+    border: 2px solid rgba(57,255,106,.35);
+    border-radius: 18px;
+    box-shadow: 0 0 32px rgba(57,255,106,.22), 0 0 90px rgba(57,255,106,.10);
+    touch-action: none;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    background: rgba(5,5,16,.72);
+    border-radius: 18px;
+    z-index: 2;
+  }
+  .overlay h2 {
+    font-size: clamp(30px, 7vw, 52px);
+    letter-spacing: .12em;
+    color: #39ff6a;
+    text-shadow: 0 0 22px #39ff6a;
+    margin-bottom: 10px;
+  }
+  .overlay p { font-size: clamp(15px, 3vw, 20px); color: #cfe3ff; margin: 4px 0; }
+  .overlay .big { font-size: clamp(20px, 4.4vw, 28px); font-weight: 800; color: #fff; }
+  .overlay .key {
+    display: inline-block;
+    margin-top: 14px;
+    padding: 8px 18px;
+    border: 1px solid #39ff6a;
+    border-radius: 999px;
+    color: #39ff6a;
+    font-weight: 700;
+    letter-spacing: .08em;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+  .hidden { display: none !important; }
+  .hint {
+    margin-top: 14px;
+    font-size: clamp(12px, 2.6vw, 15px);
+    color: #7d8db3;
+    letter-spacing: .06em;
+  }
+  .credit {
+    margin-top: 6px;
+    font-size: clamp(11px, 2.2vw, 13px);
+    color: #55648a;
+    letter-spacing: .08em;
+  }
+</style>
+</head>
+<body>
+  <h1>NEON SNAKE</h1>
+  <div class="sub">built from one prompt</div>
+  <div class="hud">
+    <span>SKOR <b id="score">0</b></span>
+    <span class="pink">TERBAIK <b id="best">0</b></span>
+    <span>LEVEL <b id="level">1</b></span>
+  </div>
+  <div id="wrap">
+    <canvas id="game" width="960" height="960"></canvas>
+    <div class="overlay" id="startOverlay">
+      <h2>NEON SNAKE</h2>
+      <p class="big">Satu prompt. Satu game.</p>
+      <p>Panah / WASD untuk bergerak &mdash; makan, tumbuh, jangan menabrak.</p>
+      <div class="key">TEKAN TOMBOL / KETUK UNTUK MAIN</div>
+    </div>
+    <div class="overlay hidden" id="overOverlay">
+      <h2>GAME OVER</h2>
+      <p class="big">Skor: <span id="finalScore">0</span></p>
+      <p>Terbaik: <span id="finalBest">0</span></p>
+      <div class="key">TEKAN R / KETUK UNTUK ULANG</div>
+    </div>
+  </div>
+  <div class="hint">ARROW KEYS / WASD &mdash; R: restart &mdash; P: jeda</div>
+  <div class="credit">Dibuat agen AI dari satu prompt &middot; make.fun</div>
+
+<script>
+"use strict";
+/* Neon Snake — classic Snake, neon glow, one HTML file, no libraries.
+   Built by an AI agent from one prompt:
+   "Build a tiny browser game: classic Snake with neon glow, arrow keys or
+    WASD to move, score counter, speed increases as you eat, game-over
+    screen with restart — one HTML file, no libraries." */
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const scoreEl = document.getElementById("score");
+const bestEl = document.getElementById("best");
+const levelEl = document.getElementById("level");
+const startOverlay = document.getElementById("startOverlay");
+const overOverlay = document.getElementById("overOverlay");
+const finalScoreEl = document.getElementById("finalScore");
+const finalBestEl = document.getElementById("finalBest");
+
+const COLS = 24, ROWS = 24, CELL = 960 / COLS;
+const START_MS = 150, MIN_MS = 68, STEP_MS = 5; // speed ramp per food
+
+const params = new URLSearchParams(location.search);
+const AUTOPLAY = params.get("autoplay") === "1";
+
+let snake, dir, dirQueue, food, score, best, stepMs, lastStep, prevSnake,
+    particles, popups, state, rafId, lastTs;
+
+best = Number(localStorage.getItem("neon-snake-best") || 0);
+bestEl.textContent = best;
+
+function reset() {
+  const c = Math.floor(COLS / 2), r = Math.floor(ROWS / 2);
+  snake = [{ x: c, y: r }, { x: c - 1, y: r }, { x: c - 2, y: r }];
+  prevSnake = snake.map(s => ({ ...s }));
+  dir = { x: 1, y: 0 };
+  dirQueue = [];
+  score = 0;
+  stepMs = START_MS;
+  particles = [];
+  popups = [];
+  placeFood();
+  scoreEl.textContent = "0";
+  levelEl.textContent = "1";
+  lastStep = performance.now();
+}
+
+function placeFood() {
+  for (;;) {
+    const f = { x: Math.floor(Math.random() * COLS), y: Math.floor(Math.random() * ROWS) };
+    if (!snake.some(s => s.x === f.x && s.y === f.y)) { food = f; return; }
+  }
+}
+
+function burst(x, y, color, n) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, sp = 2 + Math.random() * 5;
+    particles.push({ x: x * CELL + CELL / 2, y: y * CELL + CELL / 2,
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1, color });
+  }
+}
+
+function step() {
+  if (dirQueue.length) {
+    const d = dirQueue.shift();
+    if (!(d.x === -dir.x && d.y === -dir.y)) dir = d;
+  }
+  prevSnake = snake.map(s => ({ ...s }));
+  const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+
+  // Wall or self collision -> game over.
+  if (head.x < 0 || head.y < 0 || head.x >= COLS || head.y >= ROWS ||
+      snake.some(s => s.x === head.x && s.y === head.y)) {
+    return gameOver();
+  }
+  snake.unshift(head);
+  if (head.x === food.x && head.y === food.y) {
+    score += 10;
+    scoreEl.textContent = score;
+    stepMs = Math.max(MIN_MS, stepMs - STEP_MS);
+    levelEl.textContent = String(Math.floor((START_MS - stepMs) / STEP_MS) + 1);
+    burst(food.x, food.y, "#ff2d78", 26);
+    popups.push({ x: food.x, y: food.y, text: "+10", life: 1 });
+    if (score > best) { best = score; bestEl.textContent = best; }
+    placeFood();
+  } else {
+    snake.pop();
+  }
+  if (AUTOPLAY) autoSteer();
+}
+
+function gameOver() {
+  state = "over";
+  localStorage.setItem("neon-snake-best", String(best));
+  finalScoreEl.textContent = score;
+  finalBestEl.textContent = best;
+  overOverlay.classList.remove("hidden");
+  burst(snake[0].x, snake[0].y, "#39ff6a", 40);
+  if (AUTOPLAY) setTimeout(() => { if (state === "over") startGame(); }, 1500);
+}
+
+// Greedy auto-player with a flood-fill safety check: chase the food, but only
+// through moves that leave enough reachable free space to survive.
+function autoSteer() {
+  const head = snake[0];
+  const blocked = new Set(snake.slice(0, -1).map(s => s.x + "," + s.y));
+  function reachable(x, y) {
+    // BFS over free cells from (x, y); capped so it stays cheap.
+    const seen = new Set([x + "," + y]);
+    const q = [[x, y]];
+    let n = 0;
+    while (q.length && n < 400) {
+      const [cx, cy] = q.shift();
+      n++;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = cx + dx, ny = cy + dy, k = nx + "," + ny;
+        if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
+        if (blocked.has(k) || seen.has(k)) continue;
+        seen.add(k);
+        q.push([nx, ny]);
+      }
+    }
+    return n;
+  }
+  const cands = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }]
+    .filter(d => !(d.x === -dir.x && d.y === -dir.y))
+    .map(d => ({ d, nx: head.x + d.x, ny: head.y + d.y }))
+    .filter(o => o.nx >= 0 && o.ny >= 0 && o.nx < COLS && o.ny < ROWS &&
+      !blocked.has(o.nx + "," + o.ny))
+    .map(o => ({
+      ...o,
+      dist: Math.abs(o.nx - food.x) + Math.abs(o.ny - food.y),
+      room: reachable(o.nx, o.ny),
+    }));
+  if (!cands.length) return;
+  const roomy = cands.filter(o => o.room > snake.length + 4);
+  const pool = roomy.length ? roomy : cands;
+  pool.sort((a, b) => (a.dist - b.dist) || (b.room - a.room));
+  dirQueue.push(pool[0].d);
+}
+
+function draw(now) {
+  const t = Math.min(1, (now - lastStep) / stepMs);
+  ctx.clearRect(0, 0, 960, 960);
+  ctx.fillStyle = "#070718";
+  ctx.fillRect(0, 0, 960, 960);
+
+  // Faint grid.
+  ctx.strokeStyle = "rgba(255,255,255,0.045)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 1; i < COLS; i++) {
+    ctx.moveTo(i * CELL, 0); ctx.lineTo(i * CELL, 960);
+    ctx.moveTo(0, i * CELL); ctx.lineTo(960, i * CELL);
+  }
+  ctx.stroke();
+
+  // Food: pulsing magenta orb.
+  const pulse = 0.75 + Math.sin(now / 160) * 0.25;
+  ctx.save();
+  ctx.shadowColor = "#ff2d78";
+  ctx.shadowBlur = 26 * pulse;
+  ctx.fillStyle = "#ff2d78";
+  const fx = food.x * CELL + CELL / 2, fy = food.y * CELL + CELL / 2;
+  ctx.beginPath();
+  ctx.arc(fx, fy, CELL * 0.30 * pulse, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Snake: interpolated segments with neon glow.
+  for (let i = snake.length - 1; i >= 0; i--) {
+    const cur = snake[i], prv = prevSnake[Math.min(i, prevSnake.length - 1)] || cur;
+    const x = (prv.x + (cur.x - prv.x) * t) * CELL + CELL / 2;
+    const y = (prv.y + (cur.y - prv.y) * t) * CELL + CELL / 2;
+    const headness = 1 - i / snake.length;
+    const r = CELL * (0.42 - i * 0.004);
+    ctx.save();
+    ctx.shadowColor = i === 0 ? "#b6ffce" : "#39ff6a";
+    ctx.shadowBlur = i === 0 ? 30 : 18;
+    ctx.fillStyle = i === 0 ? "#c8ffd6" : `rgb(${40 + headness * 40},${255 - i * 3},${106 - i * 2})`;
+    ctx.beginPath();
+    ctx.arc(x, y, Math.max(8, r), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Particles.
+  particles = particles.filter(p => p.life > 0);
+  for (const p of particles) {
+    p.x += p.vx; p.y += p.vy; p.vx *= 0.96; p.vy *= 0.96; p.life -= 0.03;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Score popups.
+  popups = popups.filter(p => p.life > 0);
+  ctx.save();
+  ctx.font = "bold 34px 'Segoe UI', sans-serif";
+  ctx.textAlign = "center";
+  for (const p of popups) {
+    p.life -= 0.02; p.y -= 0.6;
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle = "#ffe14d";
+    ctx.shadowColor = "#ffe14d";
+    ctx.shadowBlur = 14;
+    ctx.fillText(p.text, p.x * CELL + CELL / 2, p.y * CELL);
+  }
+  ctx.restore();
+}
+
+function loop(ts) {
+  if (state !== "playing") return;
+  if (ts - lastStep >= stepMs) {
+    lastStep = ts;
+    step();
+    if (state !== "playing") { draw(ts); return; }
+  }
+  draw(ts);
+  rafId = requestAnimationFrame(loop);
+}
+
+function startGame() {
+  reset();
+  state = "playing";
+  startOverlay.classList.add("hidden");
+  overOverlay.classList.add("hidden");
+  cancelAnimationFrame(rafId);
+  requestAnimationFrame(loop);
+}
+
+function queueDir(x, y) {
+  if (state !== "playing") return;
+  const last = dirQueue.length ? dirQueue[dirQueue.length - 1] : dir;
+  if ((x === -last.x && y === -last.y) || (x === last.x && y === last.y)) return;
+  if (dirQueue.length < 3) dirQueue.push({ x, y });
+}
+
+const KEYS = {
+  ArrowUp: [0, -1], KeyW: [0, -1], ArrowDown: [0, 1], KeyS: [0, 1],
+  ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0]
+};
+addEventListener("keydown", e => {
+  if (KEYS[e.code]) { e.preventDefault(); queueDir(...KEYS[e.code]); }
+  else if (e.code === "KeyR") { if (state !== "idle") startGame(); }
+  else if (e.code === "Space" || e.code === "Enter") { if (state !== "playing") startGame(); }
+  else if (e.code === "KeyP") {
+    if (state === "playing") { state = "paused"; cancelAnimationFrame(rafId); }
+    else if (state === "paused") { state = "playing"; lastStep = performance.now(); requestAnimationFrame(loop); }
+  }
+});
+
+let touchStart = null;
+canvas.addEventListener("touchstart", e => {
+  e.preventDefault();
+  touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+}, { passive: false });
+canvas.addEventListener("touchend", e => {
+  e.preventDefault();
+  if (state !== "playing") { startGame(); return; }
+  if (!touchStart) return;
+  const dx = e.changedTouches[0].clientX - touchStart.x;
+  const dy = e.changedTouches[0].clientY - touchStart.y;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;
+  if (Math.abs(dx) > Math.abs(dy)) queueDir(Math.sign(dx), 0);
+  else queueDir(0, Math.sign(dy));
+  touchStart = null;
+}, { passive: false });
+canvas.addEventListener("click", () => { if (state !== "playing") startGame(); });
+
+reset();
+state = "idle";
+draw(performance.now());
+if (AUTOPLAY) startGame();
+
+// Handle for automated checks / capture scripts.
+window.__snake = {
+  get score() { return score; },
+  get best() { return best; },
+  get alive() { return state === "playing"; },
+  get length() { return snake.length; },
+  get state() { return state; }
+};
+</script>
+</body>
+</html>
